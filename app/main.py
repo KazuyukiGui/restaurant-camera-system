@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 # モジュールインポート
 from app.rtsp_capture import RTSPCapture
 from app.detector import PersonDetector
-from app.database import init_db, get_db, save_crowding_record, save_system_log, get_recent_records
+from app.database import init_db, get_db, save_crowding_record, save_system_log, get_recent_records, CrowdingRecord
 from app.face_blur import FaceBlur
 
 # ロギング設定
