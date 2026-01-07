@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# 環境変数（機密情報）
+.env
+
+# データベース
+data/*.db
+data/*.db-journal
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# バックアップファイル
+*.bak
+
+# 一時ファイル
+*.tmp
+/tmp/
+

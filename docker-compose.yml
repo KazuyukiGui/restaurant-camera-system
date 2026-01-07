@@ -1,0 +1,68 @@
+# 食堂混雑検知システム v3.3
+# docker-compose.yml
+
+services:
+  # RTSPサーバー
+  rtsp-server:
+    image: bluenviron/mediamtx:latest
+    container_name: rtsp-server
+    ports:
+      - '8554:8554'
+    restart: unless-stopped
+
+  # USBカメラ → RTSPストリーム変換
+  usb-camera-stream:
+    image: jrottenberg/ffmpeg:4-ubuntu
+    container_name: usb-camera-stream
+    depends_on:
+      - rtsp-server
+    privileged: true
+    group_add:
+      - video
+    devices:
+      - /dev/video0:/dev/video0
+    entrypoint: ["sh", "-c", "sleep 5 && while true; do ffmpeg -f v4l2 -input_format mjpeg -framerate 10 -video_size 640x480 -i /dev/video0 -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://rtsp-server:8554/stream 2>&1 | tee /tmp/ffmpeg.log || (echo 'FFmpeg failed, retrying in 5 seconds...' && sleep 5); done"]
+    restart: unless-stopped
+
+  # 食堂混雑検知アプリ
+  cafeteria-counter:
+    build: .
+    container_name: cafeteria-counter
+    ports:
+      - '8000:8000'
+    depends_on:
+      - rtsp-server
+      - usb-camera-stream
+    environment:
+      - RTSP_URL=rtsp://rtsp-server:8554/stream
+      - TZ=Asia/Tokyo
+      - IMGSZ=640  # 精度向上のため解像度アップ
+      - YOLO_MODEL=yolo11s.pt # YOLO11 Smallモデル（OpenVINO高速化）
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./app:/app/app
+    restart: unless-stopped
+    
+    # v3.3: ヘルスチェック設定
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/api/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # リソース制限（8GB RAM環境向け）
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

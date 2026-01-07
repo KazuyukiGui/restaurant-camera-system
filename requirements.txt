@@ -1,0 +1,23 @@
+# 食堂混雑検知システム v3.3
+# Core i3-10105T / 8GB RAM / GPU無し 環境向け
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Computer Vision
+opencv-python-headless==4.9.0.80
+ultralytics>=8.3.0  # YOLOv8/11
+openvino>=2024.4.0  # Intel CPU Optimization
+# 顔ぼかしはOpenCV Haar Cascadeを使用（追加ライブラリ不要）
+
+# Database
+sqlalchemy==2.0.25
+
+# Utilities
+python-dotenv==1.0.0
+httpx==0.26.0  # For health check testing
+
+# Production
+gunicorn==21.2.0
+
