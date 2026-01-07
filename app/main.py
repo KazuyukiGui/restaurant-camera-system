@@ -78,7 +78,7 @@ def monitoring_loop():
     logger.info("Monitoring loop started")
     
     # 記録間隔（秒）
-    RECORD_INTERVAL = int(os.getenv('RECORD_INTERVAL', '60'))
+    RECORD_INTERVAL = int(os.getenv('RECORD_INTERVAL', '10'))
     last_record_time = 0
     
     # 推論レート制御
