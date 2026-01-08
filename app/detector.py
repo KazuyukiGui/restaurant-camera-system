@@ -45,7 +45,7 @@ class PersonDetector:
         self.imgsz = imgsz or int(os.getenv('IMGSZ', '416'))
         self.model_path = model_path or os.getenv('YOLO_MODEL', 'yolo11s.pt')
         self.model = None
-        self.confidence_threshold = float(os.getenv('CONFIDENCE_THRESHOLD', '0.4'))
+        self.confidence_threshold = float(os.getenv('CONFIDENCE_THRESHOLD', '0.45'))
         
         if YOLO_AVAILABLE:
             self._load_model()
