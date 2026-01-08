@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 from app.rtsp_capture import RTSPCapture
 from app.detector import PersonDetector
 from app.database import init_db, get_db, save_crowding_record, save_system_log, get_recent_records, CrowdingRecord
-from app.face_blur import FaceBlur
 
 # ロギング設定
 logging.basicConfig(
@@ -33,24 +32,20 @@ load_dotenv()
 # グローバルインスタンス
 rtsp_capture = None
 detector = None
-face_blur = None
 latest_result = {'person_count': 0, 'crowding_level': 'low', 'confidence': 0.0}
 latest_result_lock = threading.Lock()
 
-# 設定
-FACE_BLUR_ENABLED = os.getenv('FACE_BLUR_ENABLED', 'true').lower() == 'true'
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 起動時処理
-    global rtsp_capture, detector, face_blur
+    global rtsp_capture, detector
     
     # DB初期化
     init_db()
     
     # モデルロード
     detector = PersonDetector()
-    face_blur = FaceBlur()
     
     # RTSPキャプチャ開始
     rtsp_url = os.getenv('RTSP_URL')
@@ -438,9 +433,6 @@ def get_annotated_frame():
     frame, delay, halted = rtsp_capture.get_frame()
     if frame is None:
         raise HTTPException(status_code=503, detail='No frame available')
-    
-    if face_blur and FACE_BLUR_ENABLED:
-        frame = face_blur.blur_faces(frame)
     
     person_count, detections, confidence = detector.detect_persons(frame)
     annotated = detector.draw_detections(frame, detections)
