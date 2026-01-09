@@ -1,4 +1,4 @@
-# 食堂混雑検知システム v3.3
+# 食堂混雑検知システム v3.4
 # Core i3-10105T / 8GB RAM / GPU無し 環境向け
 
 # Web Framework

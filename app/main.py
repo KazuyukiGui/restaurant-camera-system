@@ -1,5 +1,6 @@
-# 食堂混雑検知システム v3.3
+# 食堂混雑検知システム v3.4
 # Core i3-10105T / 8GB RAM / GPU無し 環境向け
+# YOLO11n使用（YOLOv8nより+2.2 mAP、30%高速化）
 
 import cv2
 import os
