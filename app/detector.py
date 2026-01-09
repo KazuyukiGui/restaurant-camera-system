@@ -24,7 +24,7 @@ class PersonDetector:
     CPU環境（Core i3-10105T）向けに最適化:
     - 推論サイズ: 416x416 (デフォルト)
     - 人物クラスのみ検知
-    - YOLO11n: YOLOv8nより+2.2 mAP向上、30%高速化
+    - YOLO11s: 9.4Mパラメータ、COCO mAP 47.0%
     """
     
     # 人物クラスID (COCO dataset)
@@ -40,11 +40,11 @@ class PersonDetector:
     def __init__(self, model_path: str = None, imgsz: int = None):
         """
         Args:
-            model_path: YOLOモデルのパス (デフォルト: yolo11n.pt)
+            model_path: YOLOモデルのパス (デフォルト: yolo11s.pt)
             imgsz: 推論画像サイズ (デフォルト: 環境変数 IMGSZ または 416)
         """
         self.imgsz = imgsz or int(os.getenv('IMGSZ', '416'))
-        self.model_path = model_path or os.getenv('YOLO_MODEL', 'yolo11n.pt')
+        self.model_path = model_path or os.getenv('YOLO_MODEL', 'yolo11s.pt')
         self.model = None
         self.confidence_threshold = float(os.getenv('CONFIDENCE_THRESHOLD', '0.5'))
         
