@@ -917,7 +917,7 @@ def index():
                         
                         const avgH = Math.min(100, Math.max(15, (item.avg_count/CAPACITY)*100));
                         const maxH = Math.min(100, Math.max(15, (item.max_count/CAPACITY)*100));
-                        const level = item.avg_count <= 30 ? 'low' : (item.avg_count <= 70 ? 'medium' : 'high');
+                        const level = item.avg_count <= 6 ? 'low' : (item.avg_count <= 10 ? 'medium' : 'high');
                         
                         return `<div class="bar-slot ${level}">
                                     <div class="bar-max" style="height:${maxH}%"></div>
