@@ -1,5 +1,6 @@
-# 食堂混雑検知システム v3.3
+# 食堂混雑検知システム v3.5
 # Core i3-10105T / 8GB RAM / GPU無し 環境向け
+# YOLO11n使用（YOLOv8nより+2.2 mAP、30%高速化）
 
 import cv2
 import os
@@ -17,8 +18,7 @@ from sqlalchemy.orm import Session
 # モジュールインポート
 from app.rtsp_capture import RTSPCapture
 from app.detector import PersonDetector
-from app.database import init_db, get_db, save_crowding_record, save_system_log, get_recent_records, CrowdingRecord
-from app.face_blur import FaceBlur
+from app.database import init_db, get_db, get_db_session, save_crowding_record, save_system_log, get_recent_records, CrowdingRecord
 
 # ロギング設定
 logging.basicConfig(
@@ -33,24 +33,20 @@ load_dotenv()
 # グローバルインスタンス
 rtsp_capture = None
 detector = None
-face_blur = None
 latest_result = {'person_count': 0, 'crowding_level': 'low', 'confidence': 0.0}
 latest_result_lock = threading.Lock()
 
-# 設定
-FACE_BLUR_ENABLED = os.getenv('FACE_BLUR_ENABLED', 'true').lower() == 'true'
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 起動時処理
-    global rtsp_capture, detector, face_blur
+    global rtsp_capture, detector
     
     # DB初期化
     init_db()
     
     # モデルロード
     detector = PersonDetector()
-    face_blur = FaceBlur()
     
     # RTSPキャプチャ開始
     rtsp_url = os.getenv('RTSP_URL')
@@ -116,14 +112,14 @@ def monitoring_loop():
                 current_time = time.time()
                 if current_time - last_record_time >= RECORD_INTERVAL:
                     try:
-                        # 新しいセッションを作成して記録
-                        db = next(get_db())
-                        save_crowding_record(
-                            db, 
-                            result['person_count'], 
-                            result['crowding_level'],
-                            result['confidence']
-                        )
+                        # コンテキストマネージャでセッションを確実にクローズ
+                        with get_db_session() as db:
+                            save_crowding_record(
+                                db,
+                                result['person_count'],
+                                result['crowding_level'],
+                                result['confidence']
+                            )
                         last_record_time = current_time
                     except Exception as e:
                         logger.error(f"DB recording failed: {e}")
@@ -438,9 +434,6 @@ def get_annotated_frame():
     frame, delay, halted = rtsp_capture.get_frame()
     if frame is None:
         raise HTTPException(status_code=503, detail='No frame available')
-    
-    if face_blur and FACE_BLUR_ENABLED:
-        frame = face_blur.blur_faces(frame)
     
     person_count, detections, confidence = detector.detect_persons(frame)
     annotated = detector.draw_detections(frame, detections)
