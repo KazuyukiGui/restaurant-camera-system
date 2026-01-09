@@ -30,11 +30,11 @@ class PersonDetector:
     # 人物クラスID (COCO dataset)
     PERSON_CLASS_ID = 0
     
-    # 混雑レベル閾値
+    # 混雑レベル閾値（実データ分布ベース）
     CROWDING_THRESHOLDS = {
-        'low': 6,       # 0-6人: 空いている
-        'medium': 10,   # 7-10人: やや混雑
-        'high': float('inf')  # 11人以上: 混雑
+        'low': 4,       # 0-4人: 空いている
+        'medium': 7,    # 5-7人: やや混雑
+        'high': float('inf')  # 8人以上: 混雑
     }
     
     def __init__(self, model_path: str = None, imgsz: int = None):
