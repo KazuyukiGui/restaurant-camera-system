@@ -796,7 +796,7 @@ def index():
     </div>
 
     <script>
-        const CAPACITY = 100;
+        const CAPACITY = 15;  // 実データの最大値に合わせて調整
         const STATUS_CONFIG = {
             low: { text: '空き', icon: '😊', class: 'low' },
             medium: { text: 'やや混雑', icon: '😐', class: 'medium' },
