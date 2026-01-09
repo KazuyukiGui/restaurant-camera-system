@@ -74,7 +74,7 @@ def monitoring_loop():
     logger.info("Monitoring loop started")
     
     # 記録間隔（秒）
-    RECORD_INTERVAL = int(os.getenv('RECORD_INTERVAL', '60'))
+    RECORD_INTERVAL = int(os.getenv('RECORD_INTERVAL', '10'))
     last_record_time = 0
     
     # 推論レート制御
@@ -674,6 +674,7 @@ def index():
             background: rgba(226, 232, 240, 0.3);
             border-radius: 2px 2px 0 0;
             display: flex; align-items: flex-end;
+            height: 100%;  /* 親の高さを継承してパーセント指定を有効化 */
         }
         .bar-avg { width: 100%; position: relative; z-index: 2; border-radius: 1px 1px 0 0; }
         .bar-max { position: absolute; bottom: 0; left: 0; width: 100%; z-index: 1; background: rgba(0,0,0,0.05); }
