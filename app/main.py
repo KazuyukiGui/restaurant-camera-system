@@ -1,4 +1,4 @@
-# 食堂混雑検知システム v3.4
+# 食堂混雑検知システム v3.5
 # Core i3-10105T / 8GB RAM / GPU無し 環境向け
 # YOLO11n使用（YOLOv8nより+2.2 mAP、30%高速化）
 
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 # モジュールインポート
 from app.rtsp_capture import RTSPCapture
 from app.detector import PersonDetector
-from app.database import init_db, get_db, save_crowding_record, save_system_log, get_recent_records, CrowdingRecord
+from app.database import init_db, get_db, get_db_session, save_crowding_record, save_system_log, get_recent_records, CrowdingRecord
 
 # ロギング設定
 logging.basicConfig(
@@ -112,14 +112,14 @@ def monitoring_loop():
                 current_time = time.time()
                 if current_time - last_record_time >= RECORD_INTERVAL:
                     try:
-                        # 新しいセッションを作成して記録
-                        db = next(get_db())
-                        save_crowding_record(
-                            db, 
-                            result['person_count'], 
-                            result['crowding_level'],
-                            result['confidence']
-                        )
+                        # コンテキストマネージャでセッションを確実にクローズ
+                        with get_db_session() as db:
+                            save_crowding_record(
+                                db,
+                                result['person_count'],
+                                result['crowding_level'],
+                                result['confidence']
+                            )
                         last_record_time = current_time
                     except Exception as e:
                         logger.error(f"DB recording failed: {e}")

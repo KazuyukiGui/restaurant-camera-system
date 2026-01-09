@@ -2,6 +2,7 @@
 # SQLite接続時に check_same_thread=False を設定（仕様書要件）
 
 import os
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import create_engine, Column, Integer, Float, DateTime, String
 from sqlalchemy.ext.declarative import declarative_base
@@ -73,7 +74,26 @@ def init_db():
 
 
 def get_db():
-    """データベースセッションを取得（依存性注入用）"""
+    """データベースセッションを取得（FastAPI依存性注入用）"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def get_db_session():
+    """
+    データベースセッションを取得（スレッド/バックグラウンド処理用）
+
+    with文で使用することでセッションの確実なクローズを保証する。
+    FastAPIの依存性注入が使えないスレッド内での使用を想定。
+
+    Usage:
+        with get_db_session() as db:
+            save_crowding_record(db, ...)
+    """
     db = SessionLocal()
     try:
         yield db
