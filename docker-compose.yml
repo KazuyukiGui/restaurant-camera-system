@@ -1,33 +1,8 @@
-# 食堂混雑検知システム v3.4
+# 食堂混雑検知システム v3.5
 # docker-compose.yml
-# nginx追加: 一般職員用（カメラなし）と管理者用（カメラあり）を分離
+# パスベースルーティング: /public（一般職員用）と /（管理者用）
 
 services:
-  # ===========================================
-  # nginx リバースプロキシ（外部公開ポート: 8000）
-  # ===========================================
-  nginx:
-    image: nginx:alpine
-    container_name: nginx-proxy
-    ports:
-      - '8000:80'
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - cafeteria-counter
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost/nginx-health']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "3"
-
   # ===========================================
   # RTSPサーバー
   # ===========================================
@@ -55,14 +30,13 @@ services:
     restart: unless-stopped
 
   # ===========================================
-  # 食堂混雑検知アプリ（内部ネットワークのみ）
+  # 食堂混雑検知アプリ（ポート8000で直接公開）
   # ===========================================
   cafeteria-counter:
     build: .
     container_name: cafeteria-counter
-    # ポートは公開しない（nginxからのみアクセス）
-    expose:
-      - '8000'
+    ports:
+      - '8000:8000'
     depends_on:
       - rtsp-server
       - usb-camera-stream
