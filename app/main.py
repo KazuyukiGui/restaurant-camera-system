@@ -10,9 +10,11 @@ import logging
 import threading
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, Response, Depends, HTTPException
+import secrets
+from fastapi import FastAPI, Response, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
 # モジュールインポート
@@ -35,6 +37,28 @@ rtsp_capture = None
 detector = None
 latest_result = {'person_count': 0, 'crowding_level': 'low', 'confidence': 0.0}
 latest_result_lock = threading.Lock()
+
+# ===============================
+# 管理者認証設定
+# ===============================
+security = HTTPBasic()
+
+# 環境変数から認証情報を取得（デフォルト: admin/admin）
+ADMIN_USER = os.getenv('ADMIN_USER', 'admin')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin')
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    """管理者認証（カメラ映像へのアクセス制御）"""
+    correct_username = secrets.compare_digest(credentials.username, ADMIN_USER)
+    correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="認証に失敗しました",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 
 @asynccontextmanager
@@ -412,8 +436,8 @@ def get_crowding_stats(days: int = 7, db: Session = Depends(get_db)):
 
 
 @app.get('/api/frame')
-def get_frame():
-    """現在のフレーム"""
+def get_frame(username: str = Depends(verify_admin)):
+    """現在のフレーム（認証必須）"""
     if rtsp_capture is None:
         raise HTTPException(status_code=503, detail='Camera not initialized')
     frame, delay, halted = rtsp_capture.get_frame()
@@ -427,8 +451,8 @@ def get_frame():
     )
 
 @app.get('/api/frame/annotated')
-def get_annotated_frame():
-    """描画済みフレーム"""
+def get_annotated_frame(username: str = Depends(verify_admin)):
+    """描画済みフレーム（認証必須）"""
     if rtsp_capture is None or detector is None:
         raise HTTPException(status_code=503, detail='System not initialized')
     frame, delay, halted = rtsp_capture.get_frame()
@@ -460,8 +484,8 @@ def get_annotated_frame():
 # ===============================
 
 @app.get('/', response_class=HTMLResponse)
-def index():
-    """モダン・モバイルファーストなダッシュボードUI"""
+def index(username: str = Depends(verify_admin)):
+    """モダン・モバイルファーストなダッシュボードUI（認証必須）"""
     html = '''
 <!DOCTYPE html>
 <html lang="ja">
