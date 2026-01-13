@@ -10,9 +10,11 @@ import logging
 import threading
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, Response, Depends, HTTPException
+import secrets
+from fastapi import FastAPI, Response, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
 # モジュールインポート
@@ -35,6 +37,28 @@ rtsp_capture = None
 detector = None
 latest_result = {'person_count': 0, 'crowding_level': 'low', 'confidence': 0.0}
 latest_result_lock = threading.Lock()
+
+# ===============================
+# 管理者認証設定
+# ===============================
+security = HTTPBasic()
+
+# 環境変数から認証情報を取得（デフォルト: admin/admin）
+ADMIN_USER = os.getenv('ADMIN_USER', 'admin')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin')
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    """管理者認証（カメラ映像へのアクセス制御）"""
+    correct_username = secrets.compare_digest(credentials.username, ADMIN_USER)
+    correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="認証に失敗しました",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 
 @asynccontextmanager
@@ -412,8 +436,8 @@ def get_crowding_stats(days: int = 7, db: Session = Depends(get_db)):
 
 
 @app.get('/api/frame')
-def get_frame():
-    """現在のフレーム"""
+def get_frame(username: str = Depends(verify_admin)):
+    """現在のフレーム（認証必須）"""
     if rtsp_capture is None:
         raise HTTPException(status_code=503, detail='Camera not initialized')
     frame, delay, halted = rtsp_capture.get_frame()
@@ -427,8 +451,8 @@ def get_frame():
     )
 
 @app.get('/api/frame/annotated')
-def get_annotated_frame():
-    """描画済みフレーム"""
+def get_annotated_frame(username: str = Depends(verify_admin)):
+    """描画済みフレーム（認証必須）"""
     if rtsp_capture is None or detector is None:
         raise HTTPException(status_code=503, detail='System not initialized')
     frame, delay, halted = rtsp_capture.get_frame()
@@ -460,8 +484,8 @@ def get_annotated_frame():
 # ===============================
 
 @app.get('/', response_class=HTMLResponse)
-def index():
-    """モダン・モバイルファーストなダッシュボードUI"""
+def index(username: str = Depends(verify_admin)):
+    """モダン・モバイルファーストなダッシュボードUI（認証必須）"""
     html = '''
 <!DOCTYPE html>
 <html lang="ja">
@@ -967,6 +991,419 @@ def index():
         
         // ダブルクリックでも最大化
         document.getElementById('camera-container').addEventListener('dblclick', toggleFullscreen);
+    </script>
+</body>
+</html>
+'''
+    return HTMLResponse(content=html)
+
+
+# ===============================
+# 一般職員用UI（カメラ映像なし）
+# ===============================
+
+@app.get('/staff', response_class=HTMLResponse)
+def staff_index():
+    """一般職員用ダッシュボードUI（カメラ映像なし）"""
+    html = '''
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>食堂混雑情報 - 職員用</title>
+    <style>
+        /* Base / Reset */
+        :root {
+            --bg: #f1f5f9;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-sub: #64748b;
+            --border: #e2e8f0;
+            --primary: #3b82f6;
+            --green: #10b981; --green-bg: #ecfdf5; --green-border: #a7f3d0;
+            --yellow: #f59e0b; --yellow-bg: #fffbeb; --yellow-border: #fde68a;
+            --red: #ef4444; --red-bg: #fef2f2; --red-border: #fecaca;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            line-height: 1.5;
+            padding-bottom: 40px;
+        }
+
+        /* Container */
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .clock {
+            font-family: monospace;
+            font-weight: 600;
+            color: var(--text-sub);
+            font-size: 1.1rem;
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: 1fr;
+        }
+
+        @media (min-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr 1fr;
+                grid-template-areas:
+                    "status status"
+                    "graph graph"
+                    "info info";
+            }
+            .card-status { grid-area: status; }
+            .card-graph { grid-area: graph; }
+            .card-info { grid-area: info; }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .card-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-sub);
+        }
+
+        /* Status Hero (Level 1 Info) */
+        .status-hero {
+            padding: 24px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .status-hero.low { background: var(--green-bg); color: #065f46; }
+        .status-hero.medium { background: var(--yellow-bg); color: #92400e; }
+        .status-hero.high { background: var(--red-bg); color: #991b1b; }
+
+        .status-icon { font-size: 4rem; margin-bottom: 8px; display: block; }
+        .status-label { font-size: 2rem; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .status-detail { font-size: 1rem; opacity: 0.9; }
+        .status-count { font-size: 1.5rem; font-weight: 700; }
+
+        /* Weekly Graph (Level 2 Info) - Scrollable */
+        .timeline-scroll {
+            overflow-x: auto;
+            position: relative;
+            scrollbar-width: thin;
+            background: #fff;
+        }
+        .timeline-content {
+            min-width: 800px; /* Ensure scroll on mobile */
+            padding: 10px 0;
+            position: relative;
+        }
+        .timeline-header, .timeline-footer {
+            height: 20px;
+            position: relative;
+            margin-left: 70px; /* label width */
+            margin-right: 16px;
+        }
+        .timeline-scale-label {
+            position: absolute; transform: translateX(-50%);
+            font-size: 0.7rem; color: var(--text-sub);
+        }
+        .timeline-grid {
+            position: absolute; top: 20px; bottom: 20px;
+            left: 70px; right: 16px; pointer-events: none;
+        }
+        .grid-line {
+            position: absolute; top: 0; bottom: 0;
+            border-left: 1px dashed #e2e8f0;
+        }
+
+        .day-row {
+            display: flex; height: 44px; align-items: center; margin-bottom: 2px;
+            position: relative; z-index: 1;
+        }
+        .day-label {
+            position: sticky; left: 0; z-index: 10;
+            width: 70px; min-width: 70px;
+            background: rgba(255,255,255,0.95);
+            font-size: 0.75rem; font-weight: 600;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            border-right: 1px solid var(--border);
+            box-shadow: 2px 0 4px rgba(0,0,0,0.02);
+            height: 100%;
+        }
+        .day-label.today { color: var(--primary); }
+
+        .bars-container {
+            flex: 1; display: flex; align-items: flex-end;
+            height: 100%; padding: 4px 0; margin-right: 16px; gap: 1px;
+        }
+        .bar-slot {
+            flex: 1; position: relative; min-width: 3px;
+            background: rgba(226, 232, 240, 0.3);
+            border-radius: 2px 2px 0 0;
+            display: flex; align-items: flex-end;
+            height: 100%;  /* 親の高さを継承してパーセント指定を有効化 */
+        }
+        .bar-avg { width: 100%; position: relative; z-index: 2; border-radius: 1px 1px 0 0; }
+        .bar-max { position: absolute; bottom: 0; left: 0; width: 100%; z-index: 1; background: rgba(0,0,0,0.05); }
+
+        .bar-slot.low .bar-avg { background: var(--green); }
+        .bar-slot.medium .bar-avg { background: var(--yellow); }
+        .bar-slot.high .bar-avg { background: var(--red); }
+
+        .bar-slot.low .bar-max { background: rgba(16, 185, 129, 0.2); }
+        .bar-slot.medium .bar-max { background: rgba(245, 158, 11, 0.2); }
+        .bar-slot.high .bar-max { background: rgba(239, 68, 68, 0.2); }
+
+        /* Logs & Info */
+        .log-list { max-height: 200px; overflow-y: auto; padding: 0 16px; }
+        .log-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 0; border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+        }
+        .log-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .log-dot.low { background: var(--green); }
+        .log-dot.medium { background: var(--yellow); }
+        .log-dot.high { background: var(--red); }
+
+        .info-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px;
+        }
+        .info-box { background: var(--bg); padding: 10px; border-radius: 8px; text-align: center; }
+        .info-val { font-weight: 700; font-size: 1rem; display: block; }
+        .info-key { font-size: 0.7rem; color: var(--text-sub); }
+
+        .legend {
+            display: flex; justify-content: center; gap: 16px; padding: 12px;
+            font-size: 0.7rem; color: var(--text-sub); background: #fafafa;
+        }
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .legend-color { width: 10px; height: 10px; border-radius: 2px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍽️ 食堂混雑情報</h1>
+            <div id="clock" class="clock">--:--</div>
+        </header>
+
+        <div class="grid">
+            <!-- 1. 現在の状況 (最重要) -->
+            <div class="card card-status">
+                <div id="status-hero" class="status-hero low">
+                    <span id="status-icon" class="status-icon">😊</span>
+                    <div id="status-text" class="status-label">空き</div>
+                    <div class="status-detail">
+                        現在 <span id="person-count" class="status-count">0</span> 人
+                    </div>
+                    <div style="margin-top:8px; font-size:0.75rem; opacity:0.7;">
+                        最終更新: <span id="last-updated">--:--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 週間トレンド (判断材料) -->
+            <div class="card card-graph">
+                <div class="card-header">
+                    <span class="card-title">📊 週間トレンド (平均/最大)</span>
+                </div>
+                <div class="timeline-scroll">
+                    <div class="timeline-content">
+                        <div id="timeline-header" class="timeline-header"></div>
+                        <div id="timeline-grid" class="timeline-grid"></div>
+                        <div id="timeline-rows">
+                            <div style="padding:20px; text-align:center; color:#999;">Loading...</div>
+                        </div>
+                        <div id="timeline-footer" class="timeline-footer"></div>
+                    </div>
+                </div>
+                <div class="legend">
+                    <div class="legend-item"><span class="legend-color" style="background:var(--green)"></span>空</div>
+                    <div class="legend-item"><span class="legend-color" style="background:var(--yellow)"></span>やや混</div>
+                    <div class="legend-item"><span class="legend-color" style="background:var(--red)"></span>混雑</div>
+                    <div class="legend-item"><span class="legend-color" style="background:rgba(0,0,0,0.1)"></span>薄色は最大値</div>
+                </div>
+            </div>
+
+            <!-- 3. 履歴情報 -->
+            <div class="card card-info">
+                <div class="card-header">
+                    <span class="card-title">📋 最近の記録</span>
+                </div>
+                <div class="log-list" id="log-list">
+                    <!-- Logs here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CAPACITY = 15;  // 実データの最大値に合わせて調整
+        const STATUS_CONFIG = {
+            low: { text: '空き', icon: '😊', class: 'low' },
+            medium: { text: 'やや混雑', icon: '😐', class: 'medium' },
+            high: { text: '混雑', icon: '😰', class: 'high' }
+        };
+        const logHistory = [];
+
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/crowding/history?limit=20');
+                const data = await res.json();
+
+                if (data.records) {
+                    const list = document.getElementById('log-list');
+                    list.innerHTML = data.records.map(r => {
+                        const date = new Date(r.timestamp);
+                        const timeStr = date.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+                        const dateStr = date.toLocaleDateString('ja-JP', {month:'numeric', day:'numeric'});
+                        const level = r.crowding_level;
+                        const levelClass = level; // low, medium, high
+
+                        return `
+                        <div class="log-item">
+                            <span class="log-dot ${levelClass}"></span>
+                            <span style="flex:1; font-size:0.8rem; color:#666;">${dateStr} ${timeStr}</span>
+                            <strong>${r.person_count}人</strong>
+                        </div>`;
+                    }).join('');
+                }
+            } catch(e) { console.error(e); }
+        }
+        loadHistory();
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').textContent = now.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+        }
+        setInterval(updateClock, 1000);
+
+        async function updateStatus() {
+            try {
+                const crowdRes = await fetch('/api/crowding');
+                const crowd = await crowdRes.json();
+
+                // Status Hero
+                const hero = document.getElementById('status-hero');
+                const config = STATUS_CONFIG[crowd.crowding_level];
+                hero.className = 'status-hero ' + config.class;
+                document.getElementById('status-icon').textContent = config.icon;
+                document.getElementById('status-text').textContent = config.text;
+                document.getElementById('person-count').textContent = crowd.person_count;
+
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+                document.getElementById('last-updated').textContent = timeStr;
+
+                // Logs
+                if (logHistory.length === 0 || logHistory[0].time !== timeStr) {
+                    logHistory.unshift({time: timeStr, count: crowd.person_count, level: crowd.crowding_level});
+                    if(logHistory.length > 10) logHistory.pop();
+
+                    document.getElementById('log-list').innerHTML = logHistory.map(l => `
+                        <div class="log-item">
+                            <span class="log-dot ${l.level}"></span>
+                            <span style="flex:1">${l.time}</span>
+                            <strong>${l.count}人</strong>
+                        </div>
+                    `).join('');
+                }
+
+            } catch(e) { console.error(e); }
+        }
+        setInterval(updateStatus, 2000);
+
+        async function updateTimeline() {
+            try {
+                const res = await fetch('/api/crowding/weekly?days=7');
+                const data = await res.json();
+                if(!data.weekly_data) return;
+
+                // Draw Headers & Grid (11:00 - 22:00)
+                const startHour = 11, endHour = 22, total = endHour - startHour;
+                let headHtml = '', gridHtml = '';
+
+                for(let h=startHour; h<=endHour; h++){
+                    const p = ((h-startHour)/total)*100;
+                    if(h < endHour) {
+                        headHtml += `<span class="timeline-scale-label" style="left:${p}%">${h}</span>`;
+                        gridHtml += `<div class="grid-line" style="left:${p}%"></div>`;
+                    }
+                }
+                gridHtml += `<div class="grid-line" style="left:100%; border:none; border-right:1px dashed #ddd"></div>`;
+
+                document.getElementById('timeline-header').innerHTML = headHtml;
+                document.getElementById('timeline-footer').innerHTML = headHtml;
+                document.getElementById('timeline-grid').innerHTML = gridHtml;
+
+                // Draw Rows
+                const rows = data.weekly_data.map(day => {
+                    const isToday = day.date === data.current_date;
+                    const bars = day.hourly_data.map(item => {
+                        if(item.samples === 0) return '<div class="bar-slot" style="background:transparent"></div>';
+
+                        const avgH = Math.min(100, Math.max(15, (item.avg_count/CAPACITY)*100));
+                        const maxH = Math.min(100, Math.max(15, (item.max_count/CAPACITY)*100));
+                        const level = item.avg_count <= 4 ? 'low' : (item.avg_count <= 7 ? 'medium' : 'high');
+
+                        return `<div class="bar-slot ${level}">
+                                    <div class="bar-max" style="height:${maxH}%"></div>
+                                    <div class="bar-avg" style="height:${avgH}%"></div>
+                                </div>`;
+                    }).join('');
+
+                    return `<div class="day-row">
+                                <div class="day-label ${isToday?'today':''}">
+                                    <span>${day.date_label}</span>
+                                    <span style="font-size:0.65rem; color:#888">${day.weekday}</span>
+                                </div>
+                                <div class="bars-container">${bars}</div>
+                            </div>`;
+                }).join('');
+
+                document.getElementById('timeline-rows').innerHTML = rows;
+
+            } catch(e) { console.error(e); }
+        }
+        updateTimeline();
+        setInterval(updateTimeline, 60000);
+        updateStatus();
     </script>
 </body>
 </html>
