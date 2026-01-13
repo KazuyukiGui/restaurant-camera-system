@@ -38,6 +38,36 @@ detector = None
 latest_result = {'person_count': 0, 'crowding_level': 'low', 'confidence': 0.0}
 latest_result_lock = threading.Lock()
 
+# 直近5分間の混雑レベル履歴（安定した混雑状況の計算用）
+STABLE_WINDOW_SECONDS = 300  # 5分
+level_history = []  # [(timestamp, crowding_level), ...]
+level_history_lock = threading.Lock()
+
+def get_stable_level():
+    """直近5分間の最頻混雑レベルを取得"""
+    from collections import Counter
+
+    with level_history_lock:
+        if not level_history:
+            return 'low', 0
+
+        # 5分以内のデータのみ
+        cutoff = time.time() - STABLE_WINDOW_SECONDS
+        recent = [level for ts, level in level_history if ts >= cutoff]
+
+        if not recent:
+            return 'low', 0
+
+        # 最頻値を計算
+        counter = Counter(recent)
+        stable_level = counter.most_common(1)[0][0]
+
+        # 最古のデータからの経過時間（分）
+        oldest_in_window = min(ts for ts, _ in level_history if ts >= cutoff)
+        minutes_ago = int((time.time() - oldest_in_window) / 60)
+
+        return stable_level, minutes_ago
+
 # ===============================
 # 管理者認証設定
 # ===============================
@@ -126,12 +156,21 @@ def monitoring_loop():
             if frame is not None:
                 # 推論実行
                 result = detector.process_frame(frame)
-                
+
                 # 結果更新
                 with latest_result_lock:
                     latest_result = result
                     latest_result['delay_seconds'] = round(delay, 2)
-                
+
+                # 履歴に追加（安定した混雑レベル計算用）
+                current_time = time.time()
+                with level_history_lock:
+                    level_history.append((current_time, result['crowding_level']))
+                    # 5分以上古いデータを削除
+                    cutoff = current_time - STABLE_WINDOW_SECONDS
+                    while level_history and level_history[0][0] < cutoff:
+                        level_history.pop(0)
+
                 # DB記録（指定間隔ごと）
                 current_time = time.time()
                 if current_time - last_record_time >= RECORD_INTERVAL:
@@ -192,10 +231,13 @@ def health_check():
 @app.get('/api/crowding')
 def get_crowding():
     """現在の混雑状況を取得"""
+    stable_level, minutes_ago = get_stable_level()
     with latest_result_lock:
         return {
             **latest_result,
-            'system_halted': rtsp_capture.system_halted if rtsp_capture else False
+            'system_halted': rtsp_capture.system_halted if rtsp_capture else False,
+            'stable_level': stable_level,
+            'stable_minutes_ago': minutes_ago
         }
 
 
@@ -1229,8 +1271,8 @@ def staff_index():
                 <div id="status-hero" class="status-hero low">
                     <span id="status-icon" class="status-icon">😊</span>
                     <div id="status-text" class="status-label">空き</div>
-                    <div style="margin-top:8px; font-size:0.75rem; opacity:0.7;">
-                        最終更新: <span id="last-updated">--:--</span>
+                    <div style="margin-top:12px; font-size:0.8rem; opacity:0.8;">
+                        <span id="last-updated">読み込み中...</span>
                     </div>
                 </div>
             </div>
@@ -1279,20 +1321,22 @@ def staff_index():
                 const crowdRes = await fetch('/api/crowding');
                 const crowd = await crowdRes.json();
 
-                // Status Hero
+                // Status Hero（安定した混雑レベルを使用）
                 const hero = document.getElementById('status-hero');
-                const config = STATUS_CONFIG[crowd.crowding_level];
+                const level = crowd.stable_level || crowd.crowding_level;
+                const config = STATUS_CONFIG[level];
                 hero.className = 'status-hero ' + config.class;
                 document.getElementById('status-icon').textContent = config.icon;
                 document.getElementById('status-text').textContent = config.text;
 
-                const now = new Date();
-                const timeStr = now.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
-                document.getElementById('last-updated').textContent = timeStr;
+                // 「○分前の情報」を表示
+                const minutes = crowd.stable_minutes_ago || 0;
+                const infoText = minutes > 0 ? `${minutes}分前の情報` : '最新の情報';
+                document.getElementById('last-updated').textContent = infoText;
 
             } catch(e) { console.error(e); }
         }
-        setInterval(updateStatus, 2000);
+        setInterval(updateStatus, 5000);  // 5秒ごと（安定データなので頻度を下げる）
 
         async function updateTimeline() {
             try {
