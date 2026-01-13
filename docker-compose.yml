@@ -1,8 +1,36 @@
-# 食堂混雑検知システム v3.3
+# 食堂混雑検知システム v3.4
 # docker-compose.yml
+# nginx追加: 一般職員用（カメラなし）と管理者用（カメラあり）を分離
 
 services:
+  # ===========================================
+  # nginx リバースプロキシ（外部公開ポート: 8000）
+  # ===========================================
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - '8000:80'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - cafeteria-counter
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost/nginx-health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # ===========================================
   # RTSPサーバー
+  # ===========================================
   rtsp-server:
     image: bluenviron/mediamtx:latest
     container_name: rtsp-server
@@ -10,7 +38,9 @@ services:
       - '8554:8554'
     restart: unless-stopped
 
+  # ===========================================
   # USBカメラ → RTSPストリーム変換
+  # ===========================================
   usb-camera-stream:
     image: jrottenberg/ffmpeg:4-ubuntu
     container_name: usb-camera-stream
@@ -24,12 +54,15 @@ services:
     entrypoint: ["sh", "-c", "sleep 5 && while true; do ffmpeg -f v4l2 -input_format mjpeg -framerate 10 -video_size 640x480 -i /dev/video0 -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://rtsp-server:8554/stream 2>&1 | tee /tmp/ffmpeg.log || (echo 'FFmpeg failed, retrying in 5 seconds...' && sleep 5); done"]
     restart: unless-stopped
 
-  # 食堂混雑検知アプリ
+  # ===========================================
+  # 食堂混雑検知アプリ（内部ネットワークのみ）
+  # ===========================================
   cafeteria-counter:
     build: .
     container_name: cafeteria-counter
-    ports:
-      - '8000:8000'
+    # ポートは公開しない（nginxからのみアクセス）
+    expose:
+      - '8000'
     depends_on:
       - rtsp-server
       - usb-camera-stream
@@ -44,7 +77,7 @@ services:
       - ./data:/app/data
       - ./app:/app/app
     restart: unless-stopped
-    
+
     # v3.3: ヘルスチェック設定
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:8000/api/health']
@@ -60,7 +93,7 @@ services:
           memory: 4G
         reservations:
           memory: 2G
-    
+
     logging:
       driver: json-file
       options:
