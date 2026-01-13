@@ -1229,19 +1229,16 @@ def staff_index():
                 <div id="status-hero" class="status-hero low">
                     <span id="status-icon" class="status-icon">😊</span>
                     <div id="status-text" class="status-label">空き</div>
-                    <div class="status-detail">
-                        現在 <span id="person-count" class="status-count">0</span> 人
-                    </div>
                     <div style="margin-top:8px; font-size:0.75rem; opacity:0.7;">
                         最終更新: <span id="last-updated">--:--</span>
                     </div>
                 </div>
             </div>
 
-            <!-- 2. 週間トレンド (判断材料) -->
+            <!-- 2. 週間トレンド -->
             <div class="card card-graph">
                 <div class="card-header">
-                    <span class="card-title">📊 週間トレンド (平均/最大)</span>
+                    <span class="card-title">📊 週間トレンド</span>
                 </div>
                 <div class="timeline-scroll">
                     <div class="timeline-content">
@@ -1257,56 +1254,19 @@ def staff_index():
                     <div class="legend-item"><span class="legend-color" style="background:var(--green)"></span>空</div>
                     <div class="legend-item"><span class="legend-color" style="background:var(--yellow)"></span>やや混</div>
                     <div class="legend-item"><span class="legend-color" style="background:var(--red)"></span>混雑</div>
-                    <div class="legend-item"><span class="legend-color" style="background:rgba(0,0,0,0.1)"></span>薄色は最大値</div>
                 </div>
             </div>
 
-            <!-- 3. 履歴情報 -->
-            <div class="card card-info">
-                <div class="card-header">
-                    <span class="card-title">📋 最近の記録</span>
-                </div>
-                <div class="log-list" id="log-list">
-                    <!-- Logs here -->
-                </div>
-            </div>
         </div>
     </div>
 
     <script>
-        const CAPACITY = 15;  // 実データの最大値に合わせて調整
+        const CAPACITY = 15;
         const STATUS_CONFIG = {
             low: { text: '空き', icon: '😊', class: 'low' },
             medium: { text: 'やや混雑', icon: '😐', class: 'medium' },
             high: { text: '混雑', icon: '😰', class: 'high' }
         };
-        const logHistory = [];
-
-        async function loadHistory() {
-            try {
-                const res = await fetch('/api/crowding/history?limit=20');
-                const data = await res.json();
-
-                if (data.records) {
-                    const list = document.getElementById('log-list');
-                    list.innerHTML = data.records.map(r => {
-                        const date = new Date(r.timestamp);
-                        const timeStr = date.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
-                        const dateStr = date.toLocaleDateString('ja-JP', {month:'numeric', day:'numeric'});
-                        const level = r.crowding_level;
-                        const levelClass = level; // low, medium, high
-
-                        return `
-                        <div class="log-item">
-                            <span class="log-dot ${levelClass}"></span>
-                            <span style="flex:1; font-size:0.8rem; color:#666;">${dateStr} ${timeStr}</span>
-                            <strong>${r.person_count}人</strong>
-                        </div>`;
-                    }).join('');
-                }
-            } catch(e) { console.error(e); }
-        }
-        loadHistory();
 
         function updateClock() {
             const now = new Date();
@@ -1325,25 +1285,10 @@ def staff_index():
                 hero.className = 'status-hero ' + config.class;
                 document.getElementById('status-icon').textContent = config.icon;
                 document.getElementById('status-text').textContent = config.text;
-                document.getElementById('person-count').textContent = crowd.person_count;
 
                 const now = new Date();
                 const timeStr = now.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
                 document.getElementById('last-updated').textContent = timeStr;
-
-                // Logs
-                if (logHistory.length === 0 || logHistory[0].time !== timeStr) {
-                    logHistory.unshift({time: timeStr, count: crowd.person_count, level: crowd.crowding_level});
-                    if(logHistory.length > 10) logHistory.pop();
-
-                    document.getElementById('log-list').innerHTML = logHistory.map(l => `
-                        <div class="log-item">
-                            <span class="log-dot ${l.level}"></span>
-                            <span style="flex:1">${l.time}</span>
-                            <strong>${l.count}人</strong>
-                        </div>
-                    `).join('');
-                }
 
             } catch(e) { console.error(e); }
         }
